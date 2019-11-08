@@ -6,7 +6,10 @@ from threading import Thread
 
 
 class Video:
-    def __init__(self, video_path):
+    def __init__(self, video_path, video_width, video_height):
+        # 视频尺寸
+        self.video_width = video_width
+        self.video_height = video_height
         # 视频存放根目录
         self.video_path = video_path
         # 保存的视频名
@@ -28,7 +31,7 @@ class Video:
         # 视频名称(桌面滑动)
         self.case_name = None
         # 畸变矫正相关参数
-        npz_file = np.load('calibrate.npz')
+        npz_file = np.load('../calibrate.npz')
         self.mtx = npz_file['mtx']
         self.dist = npz_file['dist']
         self.map_x = None
@@ -57,8 +60,11 @@ class Video:
 
 
     def video_stream(self):
-        cap = cv2.VideoCapture('D:/Test/Python/CameraCalibrate/video/multiple_frame_60s.mp4')
-        # cap = cv2.VideoCapture('D:/Test/Python/CameraCalibrate/video/test/test.mp4')
+        # cap = cv2.VideoCapture(0)
+        # cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.video_width)
+        # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.video_height)
+        # cap = cv2.VideoCapture('D:/Test/Python/CameraCalibrate/video/multiple_frame_60s.mp4')
+        cap = cv2.VideoCapture('D:/Test/Python/CameraCalibrate/video/test/test.mp4')
         while self.record_thread_flag:
             _, image = cap.read()
             if self.record_flag is True:
@@ -73,19 +79,19 @@ class Video:
 
     def save_video(self):
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(self.video_file_name, fourcc, 120.0, (1600, 1000))
-        while True:
+        out = cv2.VideoWriter(self.video_file_name, fourcc, 120.0, (self.video_width, self.video_height))
+        while 1:
             if len(self.frame_list) > 0:
-                frame = self.undistortion(self.frame_list[0], self.mtx, self.dist)
-                out.write(frame)
-                # out.write(self.frame_list[0])
+                # frame = self.undistortion(self.frame_list[0], self.mtx, self.dist)
+                # out.write(frame)
+                out.write(self.frame_list[0])
                 self.frame_list.pop(0)
             elif self.record_flag is False:
-                while True:
+                while 1:
                     if len(self.frame_list) > 0:
-                        frame = self.undistortion(self.frame_list[0], self.mtx, self.dist)
-                        out.write(frame)
-                        # out.write(self.frame_list[0])
+                        # frame = self.undistortion(self.frame_list[0], self.mtx, self.dist)
+                        # out.write(frame)
+                        out.write(self.frame_list[0])
                         self.frame_list.pop(0)
                     else:
                         break
@@ -136,14 +142,15 @@ class Video:
 
 
 if __name__=='__main__':
-    video = Video(video_path='D:/Test/Python/CameraCalibrate/video')
+    # video = Video(video_path='D:/Test/Python/CameraCalibrate/video', video_width=1600, video_height=1000)
+    # video = Video(video_path='C:/Work/video', video_width=1280, video_height=720)
+    video = Video(video_path='C:/Work/video', video_width=1600, video_height=1000)
     time.sleep(2)
+    # time.sleep(10)
     # 第一个视频
     video.start_record(case_type='test', case_name='123')
     time.sleep(5)
     video.stop_record()
-
-    time.sleep(10)
 
     # 第二个视频
     video.start_record(case_type='test', case_name='456')
