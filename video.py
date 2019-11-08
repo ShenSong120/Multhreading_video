@@ -5,84 +5,6 @@ import numpy as np
 from threading import Thread
 
 
-# 生成测试视频(显示1-5000)--检查是否丢帧
-# font=cv2.FONT_HERSHEY_SIMPLEX
-# fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-# out = cv2.VideoWriter('video/test/test.mp4', fourcc, 120.0, (1600, 1000))
-#
-# for i in range(5000):
-#     print(i+1)
-#     img=np.zeros((1000, 1600, 3), np.uint8)
-#     cv2.putText(img, str(i+1) , (200, 200), font, 4, (255, 255, 255), 2)
-#     out.write(img.copy())
-# out.release()
-
-# class Video:
-#     def __init__(self):
-#         # 帧id
-#         self.frame_id = 0
-#         # 存储需要保存的帧
-#         self.frame_list = []
-#         # record结束标志
-#         self.record_stop_flag = False
-#         self.record_flag = True
-#         self.record_thread_flag = True
-#         self.robot_start_flag = False
-#         # 是否可以重新开始录制视频
-#         self.restart_record_flag = True
-#         # 视频类型(app冷/app热/滑动流畅度等等)
-#         self.case_type = None
-#         # 视频名称(桌面滑动)
-#         self.case_name = None
-#
-#
-#     def video_stream(self):
-#         cap = cv2.VideoCapture('D:/Test/Python/CameraCalibrate/video/test/test.mp4')
-#         while self.record_thread_flag :
-#             _, image = cap.read()
-#             if self.record_flag is True:
-#                 if self.robot_start_flag is False:
-#                     self.frame_list.append(image)
-#                 else:
-#                     self.frame_list.append(image[0].fill(255))
-#                 self.frame_id += 1
-#         cap.release()
-#         print('退出视频录像线程')
-#
-#
-#     def save_video(self):
-#         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#         out = cv2.VideoWriter('video/test/123.mp4', fourcc, 120.0, (1600, 1000))
-#         while True:
-#             if len(self.frame_list) > 0:
-#                 out.write(self.frame_list[0])
-#                 self.frame_list.pop(0)
-#             elif self.record_stop_flag is True:
-#                 while True:
-#                     if len(self.frame_list) > 0:
-#                         out.write(self.frame_list[0])
-#                         self.frame_list.pop(0)
-#                     else:
-#                         break
-#                 break
-#             else:
-#                 time.sleep(0.001)
-#         out.release()
-#         print('保存结束')
-#
-#
-# if __name__=='__main__':
-#     video = Video()
-#     Thread(target=video.video_stream, args=()).start()
-#     Thread(target=video.save_video, args=()).start()
-#     time.sleep(5)
-#     video.record_flag = False
-#     video.record_stop_flag = True
-#     print(video.frame_id)
-#     video.record_thread_flag = False
-
-
-
 class Video:
     def __init__(self, video_path):
         # 视频存放根目录
@@ -105,7 +27,33 @@ class Video:
         self.case_type = None
         # 视频名称(桌面滑动)
         self.case_name = None
+        # 畸变矫正相关参数
+        npz_file = np.load('calibrate.npz')
+        self.mtx = npz_file['mtx']
+        self.dist = npz_file['dist']
+        self.map_x = None
+        self.map_y = None
+        # 开启视频流
         Thread(target=self.video_stream, args=()).start()
+
+    # 消除畸变
+    def undistortion(self, img, mtx, dist):
+        h, w = img.shape[:2]
+        newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dist, (w, h), 1, (w, h))
+        # print('roi ', roi)
+        # 耗时操作
+        # dst = cv2.undistort(img, mtx, dist, None, newcameramtx)
+        # 替代方案(节省时间)/map_x, map_y使用全局变量更加节省时间
+        if self.map_x is None and self.map_y is None:
+            # 计算一个从畸变图像到非畸变图像的映射(只需要执行一次, 找出映射关系即可)
+            self.map_x, self.map_y = cv2.initUndistortRectifyMap(mtx, dist, None, newcameramtx, (w, h), 5)
+        # 使用映射关系对图像进行去畸变
+        dst = cv2.remap(img, self.map_x, self.map_y, cv2.INTER_LINEAR)
+        # 裁剪图片
+        # x, y, w, h = roi
+        # if roi != (0, 0, 0, 0):
+        #     dst = dst[y:y + h, x:x + w]
+        return dst
 
 
     def video_stream(self):
@@ -128,12 +76,16 @@ class Video:
         out = cv2.VideoWriter(self.video_file_name, fourcc, 120.0, (1600, 1000))
         while True:
             if len(self.frame_list) > 0:
-                out.write(self.frame_list[0])
+                frame = self.undistortion(self.frame_list[0], self.mtx, self.dist)
+                out.write(frame)
+                # out.write(self.frame_list[0])
                 self.frame_list.pop(0)
             elif self.record_flag is False:
                 while True:
                     if len(self.frame_list) > 0:
-                        out.write(self.frame_list[0])
+                        frame = self.undistortion(self.frame_list[0], self.mtx, self.dist)
+                        out.write(frame)
+                        # out.write(self.frame_list[0])
                         self.frame_list.pop(0)
                     else:
                         break
@@ -146,6 +98,12 @@ class Video:
 
 
     def start_record(self, case_type='test', case_name='test'):
+        # 判断视频是否保存完成(保存完毕才允许再次开始录像)
+        if self.restart_record_flag is False:
+            print('上一个视频还未保存完成, 请稍等...')
+            while self.restart_record_flag is False:
+                time.sleep(0.002)
+        # 传入视频类型和视频名
         self.case_type = case_type
         self.case_name = case_name
         # 创建文件夹(没有就创建)
@@ -153,12 +111,7 @@ class Video:
         if os.path.exists(video_path) is False:
             os.makedirs(video_path)
         self.video_file_name = self.video_path + '/' + self.case_type + '/' + self.case_name + '.mp4'
-        # 判断视频是否保存完成
-        if self.restart_record_flag is False:
-            print('上一个视频还未保存完成, 请稍等...')
-            while self.restart_record_flag is False:
-                time.sleep(0.002)
-            # 重新录制视频标志重新置位
+        # 重新录制视频标志重新置位
         self.restart_record_flag = False
         '''开始录像(通过标志位)'''
         self.record_flag = True
